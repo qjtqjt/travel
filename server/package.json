@@ -1,0 +1,20 @@
+{
+  "name": "travel-ai-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@langchain/openai": "^1.5.11",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "langchain": "^1.5.10"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
