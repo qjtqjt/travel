@@ -19,9 +19,19 @@ export function getChatModel() {
       apiKey: LLM_API_KEY,
       model: LLM_MODEL,
       temperature: 0.7,
-      streaming: true,
+      streaming: true, // 打字机效果
+      // 推理模型默认先长时间"思考"才出正文；中转站支持该参数时关闭思考以降低首字延迟，
+      // 不支持时会被自动忽略（实测返回 200）
+      modelKwargs: {
+        enable_thinking: false,
+      },
       configuration: {
         baseURL: LLM_BASE_URL,
+        // 中转站对 gzip 压缩的 SSE 响应会按压缩块缓冲（实测首字节 11s+、整段突发），
+        // 显式要求不压缩，让思考/正文片段尽早流式到达
+        defaultHeaders: {
+          'Accept-Encoding': 'identity',
+        },
       },
     })
   }

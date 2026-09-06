@@ -22,11 +22,15 @@ const scrollToBottom = async () => {
   }
 }
 
-// 消息增长/流式更新时自动滚到底部
+// 消息增长/流式更新时自动滚到底部（思考过程变化也算）
 watch(
-  () => chatStore.messages.map((m) => m.content).join('').length,
+  () => chatStore.messages.map((m) => m.content + (m.reasoning ?? '')).join('').length,
   scrollToBottom,
 )
+
+// 最后一条 AI 消息正在流式输出中
+const isStreamingLast = (i: number) =>
+  chatStore.sending && i === chatStore.messages.length - 1
 
 const send = (text?: string) => {
   const content = (text ?? input.value).trim()
@@ -59,9 +63,27 @@ if (typeof route.query.q === 'string' && route.query.q) {
       >
         <div class="avatar">{{ msg.role === 'user' ? '🧳' : '🤖' }}</div>
         <div class="bubble">
-          <template v-if="msg.content">{{ msg.content }}</template>
-          <span v-else-if="chatStore.sending && i === chatStore.messages.length - 1" class="typing">
-            <van-loading size="14px" type="spinner" /> 正在思考…
+          <!-- 推理模型的思考过程：流式中展开可见，结束后默认折叠 -->
+          <details
+            v-if="msg.reasoning"
+            class="thinking"
+            :open="isStreamingLast(i)"
+            @toggle="scrollToBottom"
+          >
+            <summary>
+              <van-loading v-if="isStreamingLast(i) && !msg.content" size="12px" type="spinner" />
+              思考过程
+            </summary>
+            <div class="thinking-text">{{ msg.reasoning }}</div>
+          </details>
+
+          <!-- 正文：打字机式逐字呈现 + 末尾闪烁光标 -->
+          <template v-if="msg.content">
+            {{ msg.content }}<span v-if="isStreamingLast(i)" class="cursor" />
+          </template>
+          <span v-else-if="isStreamingLast(i)" class="typing">
+            <van-loading size="14px" type="spinner" />
+            {{ msg.reasoning ? '正在组织回答…' : '正在思考…' }}
           </span>
         </div>
       </div>
@@ -170,6 +192,57 @@ if (typeof route.query.q === 'string' && route.query.q) {
   align-items: center;
   gap: 6px;
   color: #969799;
+}
+
+/* 思考过程折叠块 */
+.thinking {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #969799;
+}
+
+.thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  list-style: none;
+}
+
+.thinking summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-text {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #969799;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* 打字机末尾闪烁光标 */
+.cursor {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #1989fa;
+  animation: cursor-blink 0.9s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .quick-bar {

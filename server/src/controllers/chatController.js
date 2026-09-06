@@ -1,13 +1,15 @@
+// 从 LangChain Core 引入消息类型，用于构造对话历史（SystemMessage/HumanMessage/AIMessage）
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import { getChatModel, isMockMode } from '../llm/model.js'
 import { SYSTEM_PROMPT } from '../llm/prompts.js'
 import { mockChatStream } from '../llm/mockStream.js'
 
 // SSE 事件下发辅助：前端按 JSON 事件解析
-//   { type: 'meta',  mode }      —— 本次回复走的是 live 还是 mock
-//   { type: 'delta', content }   —— 流式文本片段
-//   { type: 'error', message }   —— 出错
-//   { type: 'done' }             —— 结束
+//   { type: 'meta',      mode }      —— 本次回复走的是 live 还是 mock
+//   { type: 'reasoning', content }   —— 推理模型的思考过程片段（可不给）
+//   { type: 'delta',     content }   —— 正文流式文本片段
+//   { type: 'error',     message }   —— 出错
+//   { type: 'done' }                 —— 结束
 function sseSender(res) {
   return (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
 }
@@ -50,6 +52,7 @@ export async function chatStream(req, res) {
         send({ type: 'delta', content: chunk })
       }
     } else {
+      // 调用大模型推理，返回流式文本
       send({ type: 'meta', mode: 'live' })
       const model = getChatModel()
       const messages = [
@@ -61,6 +64,12 @@ export async function chatStream(req, res) {
       const stream = await model.stream(messages)
       for await (const chunk of stream) {
         if (aborted) return
+        // 推理模型的思考过程在 reasoning_content 字段（LangChain 放入 additional_kwargs），
+        // 单独通道下发给前端展示为"思考中"，避免思考阶段前端长时间无反馈
+        const reasoning = chunk.additional_kwargs?.reasoning_content
+        if (typeof reasoning === 'string' && reasoning) {
+          send({ type: 'reasoning', content: reasoning })
+        }
         const text = typeof chunk.content === 'string' ? chunk.content : ''
         if (text) send({ type: 'delta', content: text })
       }

@@ -1,31 +1,50 @@
-// 对话消息类型（与后端 /api/chat 入参一致）
+// 对话消息类型（role/content 与后端 /api/chat 入参一致；reasoning 仅前端展示用）
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  reasoning?: string
 }
 
 export type LlmMode = 'live' | 'mock'
 
 interface StreamHandlers {
   onMeta?: (mode: LlmMode) => void
+  onReasoning?: (text: string) => void
   onDelta?: (text: string) => void
   onError?: (message: string) => void
   onDone?: () => void
 }
 
+// 空闲超时：超过该时长没有任何数据到达（网络中断/后端重启/上游挂起），主动中止
+const IDLE_TIMEOUT_MS = 90_000
+
 /**
  * 调用后端 SSE 流式对话接口。
- * 事件协议：{ type: 'meta'|'delta'|'error'|'done', ... }
+ * 事件协议：{ type: 'meta'|'reasoning'|'delta'|'error'|'done', ... }
  */
 export async function streamChat(
   messages: ChatMessage[],
   handlers: StreamHandlers,
 ): Promise<void> {
+  const controller = new AbortController()
+  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  let timedOut = false
+
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, IDLE_TIMEOUT_MS)
+  }
+
   try {
+    resetIdleTimer()
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages }),
+      signal: controller.signal,
     })
 
     if (!resp.ok || !resp.body) {
@@ -41,6 +60,7 @@ export async function streamChat(
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      resetIdleTimer() // 每收到一段数据就重置空闲计时
       buffer += decoder.decode(value, { stream: true })
 
       // SSE 以 \n\n 分隔事件，按行解析
@@ -56,6 +76,7 @@ export async function streamChat(
         try {
           const evt = JSON.parse(payload)
           if (evt.type === 'meta') handlers.onMeta?.(evt.mode)
+          else if (evt.type === 'reasoning') handlers.onReasoning?.(evt.content ?? '')
           else if (evt.type === 'delta') handlers.onDelta?.(evt.content ?? '')
           else if (evt.type === 'error') handlers.onError?.(evt.message ?? '未知错误')
           else if (evt.type === 'done') {
@@ -69,7 +90,15 @@ export async function streamChat(
     }
     handlers.onDone?.()
   } catch (err) {
-    handlers.onError?.(err instanceof Error ? err.message : '网络请求失败')
+    if (timedOut) {
+      handlers.onError?.('响应超时（90 秒无数据），请检查网络后重试')
+    } else if ((err as Error)?.name === 'AbortError') {
+      // 请求被主动取消，不提示
+    } else {
+      handlers.onError?.(err instanceof Error ? err.message : '网络请求失败')
+    }
     handlers.onDone?.()
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
   }
 }
