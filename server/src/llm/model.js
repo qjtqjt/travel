@@ -32,6 +32,21 @@ export function getChatModel() {
         defaultHeaders: {
           'Accept-Encoding': 'identity',
         },
+        // 调试日志：打印每次 LLM 请求的模型/消息角色/工具数量（验证 Agent 循环用）
+        fetch: async (url, init) => {
+          try {
+            const body = JSON.parse(init?.body ?? '{}')
+            console.log(
+              '[llm req] stream:', body.stream,
+              '| model:', body.model,
+              '| msgRoles:', JSON.stringify((body.messages ?? []).map((m) => m.role)),
+              '| tools:', (body.tools ?? []).length,
+            )
+          } catch {
+            // 非 JSON 请求体，忽略
+          }
+          return fetch(url, init)
+        },
       },
     })
   }

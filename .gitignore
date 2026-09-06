@@ -19,6 +19,9 @@ src/components.d.ts
 # backend env (contains LLM API key)
 server/.env
 
+# backend runtime data (itineraries, debug artifacts)
+server/data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
