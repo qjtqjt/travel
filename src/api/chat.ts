@@ -1,8 +1,17 @@
-// 对话消息类型（role/content 与后端 /api/chat 入参一致；reasoning 仅前端展示用）
+// Agent 工具调用轨迹（一条 AI 回复可能包含多次工具调用）
+export interface ToolTrace {
+  id: string
+  name: string
+  args: string
+  result?: string
+}
+
+// 对话消息类型（role/content 与后端 /api/chat 入参一致；reasoning/tools 仅前端展示用）
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   reasoning?: string
+  tools?: ToolTrace[]
 }
 
 export type LlmMode = 'live' | 'mock'
@@ -11,6 +20,8 @@ interface StreamHandlers {
   onMeta?: (mode: LlmMode) => void
   onReasoning?: (text: string) => void
   onDelta?: (text: string) => void
+  onToolCall?: (evt: { id: string; name: string; args: string }) => void
+  onToolResult?: (evt: { id: string; name: string; result: string }) => void
   onError?: (message: string) => void
   onDone?: () => void
 }
@@ -20,7 +31,7 @@ const IDLE_TIMEOUT_MS = 90_000
 
 /**
  * 调用后端 SSE 流式对话接口。
- * 事件协议：{ type: 'meta'|'reasoning'|'delta'|'error'|'done', ... }
+ * 事件协议：{ type: 'meta'|'reasoning'|'delta'|'tool_call'|'tool_result'|'error'|'done', ... }
  */
 export async function streamChat(
   messages: ChatMessage[],
@@ -78,6 +89,10 @@ export async function streamChat(
           if (evt.type === 'meta') handlers.onMeta?.(evt.mode)
           else if (evt.type === 'reasoning') handlers.onReasoning?.(evt.content ?? '')
           else if (evt.type === 'delta') handlers.onDelta?.(evt.content ?? '')
+          else if (evt.type === 'tool_call')
+            handlers.onToolCall?.({ id: evt.id ?? '', name: evt.name ?? '', args: evt.args ?? '' })
+          else if (evt.type === 'tool_result')
+            handlers.onToolResult?.({ id: evt.id ?? '', name: evt.name ?? '', result: evt.result ?? '' })
           else if (evt.type === 'error') handlers.onError?.(evt.message ?? '未知错误')
           else if (evt.type === 'done') {
             handlers.onDone?.()

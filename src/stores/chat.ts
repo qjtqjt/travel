@@ -61,6 +61,16 @@ export const useChatStore = defineStore('chat', () => {
       onDelta: (t) => {
         pending += t
       },
+      onToolCall: (e) => {
+        // Agent 发起工具调用：轨迹入列（含参数，结果待回填）
+        if (!reply.tools) reply.tools = []
+        reply.tools.push({ id: e.id, name: e.name, args: e.args })
+      },
+      onToolResult: (e) => {
+        // 工具执行完成：按 id 找到对应轨迹项回填结果
+        const t = reply.tools?.find((x) => x.id === e.id)
+        if (t) t.result = e.result
+      },
       onError: (msg) => {
         pending += `${reply.content || pending ? '\n\n' : ''}[出错了] ${msg}`
       },

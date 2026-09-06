@@ -22,9 +22,17 @@ const scrollToBottom = async () => {
   }
 }
 
-// 消息增长/流式更新时自动滚到底部（思考过程变化也算）
+// 消息增长/流式更新时自动滚到底部（思考过程、工具轨迹变化也算）
 watch(
-  () => chatStore.messages.map((m) => m.content + (m.reasoning ?? '')).join('').length,
+  () =>
+    chatStore.messages
+      .map(
+        (m) =>
+          m.content +
+          (m.reasoning ?? '') +
+          (m.tools ?? []).map((t) => t.id + (t.result ?? '')).join(''),
+      )
+      .join('').length,
   scrollToBottom,
 )
 
@@ -42,6 +50,23 @@ const send = (text?: string) => {
 // 从首页快捷入口带入的问题，进入后自动发送
 if (typeof route.query.q === 'string' && route.query.q) {
   send(route.query.q)
+}
+
+// 工具名 → 中文标签
+const TOOL_LABELS: Record<string, string> = {
+  queryWeather: '查询天气',
+  searchAttractions: '搜索景点',
+  estimateBudget: '估算预算',
+  saveItinerary: '保存行程',
+}
+
+// 展示工具入参（JSON 值拼接，过长截断）
+const toolArgs = (args: string) => {
+  try {
+    return Object.values(JSON.parse(args)).join(' · ').slice(0, 30)
+  } catch {
+    return args.slice(0, 30)
+  }
 }
 </script>
 
@@ -63,6 +88,22 @@ if (typeof route.query.q === 'string' && route.query.q) {
       >
         <div class="avatar">{{ msg.role === 'user' ? '🧳' : '🤖' }}</div>
         <div class="bubble">
+          <!-- Agent 工具调用轨迹：模型自主决定调用什么工具，结果可展开查看 -->
+          <div v-if="msg.tools?.length" class="tool-trace">
+            <div v-for="t in msg.tools" :key="t.id" class="tool-item">
+              <div class="tool-head">
+                <van-loading v-if="isStreamingLast(i) && !t.result" size="12px" type="spinner" />
+                <span v-else class="tool-icon">🔧</span>
+                <span class="tool-name">{{ TOOL_LABELS[t.name] ?? t.name }}</span>
+                <span class="tool-args">{{ toolArgs(t.args) }}</span>
+              </div>
+              <details v-if="t.result" class="tool-detail">
+                <summary>执行结果</summary>
+                <div class="tool-result">{{ t.result }}</div>
+              </details>
+            </div>
+          </div>
+
           <!-- 推理模型的思考过程：流式中展开可见，结束后默认折叠 -->
           <details
             v-if="msg.reasoning"
@@ -225,6 +266,72 @@ if (typeof route.query.q === 'string' && route.query.q) {
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 180px;
+  overflow-y: auto;
+}
+
+/* Agent 工具调用轨迹 */
+.tool-trace {
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.tool-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #f0f7ff;
+  color: #4b6a8f;
+}
+
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-icon {
+  font-size: 12px;
+}
+
+.tool-name {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: #1989fa;
+}
+
+.tool-args {
+  color: #969799;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-detail summary {
+  margin-top: 4px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  list-style: none;
+  color: #969799;
+}
+
+.tool-detail summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-result {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fff;
+  color: #969799;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 140px;
   overflow-y: auto;
 }
 
